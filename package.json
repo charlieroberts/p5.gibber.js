@@ -1,0 +1,32 @@
+{
+  "name": "p5.gibber.js",
+  "version": "0.0.0",
+  "description": "Music and audio programming for p5.js",
+  "main": "dist/p5.gibber.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "p5.js",
+    "gibber",
+    "gibberish",
+    "audio",
+    "music",
+    "synthesis",
+    "sequencing"
+  ],
+  "author": "Charlie Roberts <charlie@charlie-roberts.com> (http://www.charlie-roberts.com/)",
+  "license": "MIT",
+  "devDependencies": {
+    "gulp": "~3.8.7",
+    "gibber.lib": "~0.1.5",
+    "vinyl-source-stream": "~0.1.1",
+    "vinyl-buffer": "0.0.0",
+    "gulp-uglify": "~1.0.0",
+    "browserify": "~5.11.0",
+    "p5": "~0.3.5"
+  }
+}

@@ -1,0 +1,32 @@
+<head>
+  <script language="javascript" src="../../node_modules/p5/lib/p5.js"></script>
+  <script src="../../dist/p5.gibber.js" type="text/javascript" charset="utf-8"></script>
+  <script language="javascript" src="./sketch.js"></script>
+  <link rel="stylesheet" href="../examples.css">
+  
+  <link rel="stylesheet" href="../monokai_sublime.css">
+  <script src="../highlight.pack.js"></script>
+  <script>hljs.initHighlightingOnLoad();</script>
+</head>
+
+<body>
+  <div id='code'>
+  <pre><code>// sketch.js with Gibber using instance mode
+var s = function( sketch ) {
+  var drums, follow
+
+  sketch.setup = function() {
+    sketch.createCanvas( sketch.windowWidth, sketch.windowHeight )
+
+    drums = sketch.Gibber.Percussion.EDrums('x*o*x*o-')
+    follow = sketch.Gibber.Analysis.Follow( drums )
+  };
+
+  sketch.draw = function() {
+    sketch.background( follow.getValue() * 255 )
+  }
+}
+
+var myp5 = new p5( s )
+  </code></pre>    
+</body>
