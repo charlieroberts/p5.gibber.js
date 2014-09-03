@@ -1,7 +1,7 @@
 p5.gibber.js
 ============
 
-Music and audio programming for p5.js. This is a thin wrapper around [http://charlie-roberts.com/gibber/gibber-lib-js](Gibber.lib), which enables easy musical sequencing and audio signal processing.
+Music and audio programming for p5.js. This is a thin wrapper around [Gibber.lib](http://charlie-roberts.com/gibber/gibber-lib-js), which enables easy musical sequencing and audio signal processing.
 
 ##Usage
 The library can be found in the `dist` folder. To use it in a p5 sketch:
@@ -13,10 +13,10 @@ The library can be found in the `dist` folder. To use it in a p5 sketch:
 There are a variety of examples in the included examples directory.
 
 ##Examples
-Simple examples of `p5` and `p5.gibber.js` can be found [http://charlie-roberts.com/gibber/p5-gibber/](here).
+Simple examples of `p5` and `p5.gibber.js` can be found [here](http://charlie-roberts.com/gibber/p5-gibber/).
 
 ##Building
-The library is an extremely thin wrapper around `Gibber.lib`; it currently only adds eight lines of code. This code ensures that Gibber functions are exported either to the global namespace or the `p5.prototype` object only, as per [https://github.com/lmccart/p5.js/wiki/p5.js-overview#instantiation--namespace](the instructions found here). Thus, if you need to hack on Gibber, it's best to do so on Gibber.lib.
+The library is an extremely thin wrapper around `Gibber.lib`; it currently only adds eight lines of code. This code ensures that Gibber functions are exported either to the global namespace or the `p5.prototype` object only, as per [the instructions found here](https://github.com/lmccart/p5.js/wiki/p5.js-overview#instantiation--namespace). Thus, if you need to hack on Gibber, it's best to do so on Gibber.lib.
 
 If you really want to build the library:
 
