@@ -1,3 +1,5 @@
+//function preload() { startGibber() }
+
 function setup() {
   createCanvas( windowWidth, windowHeight )
 

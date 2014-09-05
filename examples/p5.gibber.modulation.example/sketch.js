@@ -1,5 +1,5 @@
 // fftSize must be at least 32, and a power of 2 (32,64,128,256 etc.)
-var drums = null, envelope = null, fft = null, fftSize = 2048
+var drums = null, envelope = null, fft = null, fftSize = 512
 
 function setup() {
   createCanvas( windowWidth, windowHeight )
