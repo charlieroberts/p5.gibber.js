@@ -1,0 +1,1 @@
+Please see the main repository README for instructions on using SoundFonts. You'll need to download them separately from this repository.
