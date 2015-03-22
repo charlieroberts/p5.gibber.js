@@ -5,7 +5,7 @@ p5.prototype.Gibber.Audio = require( 'gibber.audio.lib' )( p5.prototype.Gibber )
 p5.prototype.Gibber.export( p5.prototype )
 
 p5.prototype.Gibber.init({ globalize:false, target:p5.prototype })
-},{"gibber.audio.lib":5,"gibber.core.lib":23}],2:[function(require,module,exports){
+},{"gibber.audio.lib":5,"gibber.core.lib":26}],2:[function(require,module,exports){
 (function (global){
 !function (root, factory) {
   if (typeof define === "function" && define.amd) {
@@ -73,7 +73,7 @@ var Gibberish = {
   callbackObjects   : [],        // ugen function callbacks used in main audio callback
   analysisCallbackArgs    : [],
   analysisCallbackObjects : [],
-  
+  onBlock: null,
 /**###Gibberish.createCallback : method
 Perform codegen on all dirty ugens and re-create the audio callback. This method is called automatically in the default Gibberish sample loop whenever Gibberish.isDirty is true.
 **/
@@ -162,7 +162,9 @@ param **Audio Event** : Object. The HTML5 audio event object.
         objs = me.callbackObjects.slice(0),
         callbackArgs, callbackBody, _callback, val
 
-        objs.unshift(0)
+    if( me.onBlock !== null ) me.onBlock( me.context )
+    
+    objs.unshift(0)
         
 		for(var i = 0, _bl = e.outputBuffer.length; i < _bl; i++){
       
@@ -1371,7 +1373,8 @@ param **amp** Number. The amplitude to be used to calculate output.
     //   }
     //   //console.log( "FLIP", sign, signHistory, count, sync )
     // }
-    if( sign !== 0 ) signHistory = sign
+    // 
+    // if( sign !== 0 ) signHistory = sign
     
     return ( val1 + ( frac * (val2 - val1) ) ) * amp;
   }
@@ -2342,6 +2345,7 @@ Gibberish.Line = function(start, end, time, loops) {
   //console.log("INCREMENT", incr, end, start, time )
   
 	this.callback = function(start, end, time, loops) {
+    var incr = (end - start) / time
 		out = phase < time ? start + ( phase++ * incr) : end;
 				
 		phase = (out >= end && loops) ? 0 : phase;
@@ -2349,7 +2353,10 @@ Gibberish.Line = function(start, end, time, loops) {
 		return out;
 	};
   
+  this.setPhase = function(v) { phase = v; }
+  
   Gibberish.extend(this, that);
+  
   this.init();
 
   return this;
@@ -2630,6 +2637,8 @@ Gibberish.Follow = function() {
     mult : 1,
     useAbsoluteValue:true // for amplitude following, false for other values
   };
+  
+  this.storage = [];
     
   var abs = Math.abs,
       history = [0],
@@ -2662,11 +2671,13 @@ Gibberish.Follow = function() {
   
   var oldBufferSize = this.__lookupSetter__( 'bufferSize' ),
       bs = this.bufferSize
-      
+  
   Object.defineProperty( this, 'bufferSize', {
     get: function() { return bs },
     set: function(v) { bs = v; sum = 0; history = [0]; index = 0; }
   })
+  
+  this.getStorage = function() { return this.storage; }
 };
 Gibberish.Follow.prototype = Gibberish._analysis;
 
@@ -3429,11 +3440,14 @@ Number. 0..50. Values above 4.5 are likely to produce shrieking feedback. You ar
 Number. 0..3. "LP" = lowpass, "HP" = highpass, "BP" = bandpass
 **/
 Gibberish.Biquad = function() {
-  var _x1 = [0,0],
-      _x2 = [0,0],
-      _y1 = [0,0],
-      _y2 = [0,0],
-      x1 = x2 = y1 = y2 = 0,
+  var x1L = 0,
+      x2L = 0,
+      y1L = 0,
+      y2L = 0,
+      x1R = 0,
+      x2R = 0,
+      y1R = 0,
+      y2R = 0,
       out = [0,0],
 	    b0 = 0.001639,
 	    b1 = 0.003278,
@@ -3505,32 +3519,28 @@ Gibberish.Biquad = function() {
     },
 
     callback: function( x ) {
-      var channels = typeof x === 'number' ? 1 : 2,
+      var channels = isNaN( x ) ? 2 : 1,
           outL = 0,
           outR = 0,
           inL = channels === 1 ? x : x[0];
       
-      //outL = b0 * inL + b1 * x1[0] + b2 * x2[0] - a1 * y1[0] - a2 * y2[0];
-      outL = b0 * inL + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-      
-      // x2[0] = x1[0];
-      // x1[0] = x[0];
-      // y2[0] = y1[0];
-      // y1[0] = outL;
-      
-      x2 = x1;
-      x1 = x;
-      y2 = y1;
-      y1 = outL;
-            
+      //if( _phase++ % 22050 === 0 ) console.log( "X IS ", typeof x )
+
+      outL = b0 * inL + b1 * x1L + b2 * x2L - a1 * y1L - a2 * y2L;
+
+      x2L = x1L;
+      x1L = inL;
+      y2L = y1L;
+      y1L = outL;
+
       if(channels === 2) {
         inR = x[1];
-        outR = b0 * inR + b1 * x1[1] + b2 * x2[1] - a1 * y1[1] - a2 * y2[1];
-        x2[1] = x1[1];
-        x1[1] = x[1];
-        y2[1] = y1[1];
-        y1[1] = outR;
-        
+        outR = b0 * inR + b1 * x1R + b2 * x2R - a1 * y1R - a2 * y2R;
+        x2R = x1R;
+        x1R = inR;
+        y2R = y1R;
+        y1R = outR;
+
         out[0] = outL;
         out[1] = outR;
       }
@@ -5196,7 +5206,8 @@ Gibberish.Sampler = function() {
 	    out = [0,0],
       buffer = null,
       bufferLength = 1,
-      self = this;
+      self = this,
+      count = 0;
       
 	Gibberish.extend(this, {
 		name: 			"sampler",
@@ -5227,7 +5238,7 @@ param **buffer** Object. The decoded sampler buffers from the audio file
 		_onload : 		function(decoded) {
 			buffer = decoded.channels[0]; 
 			bufferLength = decoded.length;
-					
+			self.length = bufferLength
 			self.end = bufferLength;
       self.length = phase = bufferLength;
       self.isPlaying = true;
@@ -5446,7 +5457,11 @@ _pitch, amp, isRecording, isPlaying, input, length, start, end, loops, pan
   					phase = loops ? end : phase;
   				}
   			}
-  			return panner(val * amp, pan, out);
+        // var __out = panner(val * amp, pan, out);
+        // if( count++ % 22050 === 0 ) console.log( __out )
+        // if( ! isNaN( __out ) ) {console.log("CRAP", __out )}
+        // return __out
+        return panner(val * amp, pan, out);
   		}
   		phase = loops && _pitch > 0 ? start : phase;
   		phase = loops && _pitch < 0 ? end : phase;
@@ -6554,6 +6569,8 @@ Gibberish.PolySeq = function() {
     autofire      : [],
     name          : 'polyseq',
     getPhase      : function() { return phase },
+    setPhase      : function(v) { phase = v },
+    adjustPhase   : function(v) { phase += v },
     timeModifier  : null,
     add           : function( seq ) {
       seq.valuesIndex = seq.durationsIndex = 0
@@ -6807,7 +6824,8 @@ function createInput() {
 	    Gibberish.mediaStreamSource.connect( Gibberish.node );
 			_hasInput = true;
 		},
-    function() { 
+    function( e ) { 
+      console.log( e )
       console.log( 'error opening audio input')
     }
 	)
@@ -7050,6 +7068,100 @@ Gibberish.Tom = function() {
 }
 Gibberish.Tom.prototype = Gibberish._oscillator;
 
+Gibberish.Clap = function() {
+  var _bpf = new Gibberish.Biquad(),
+      bpf  = _bpf.callback,
+      _bpf2 = new Gibberish.Biquad(),
+      bpf2 = _bpf2.callback,
+      _bpf3 = new Gibberish.Biquad(),
+      bpf3 = _bpf3.callback,      
+      _eg = new Gibberish.ExponentialDecay(),
+      eg  = _eg.callback,
+      _eg2 = new Gibberish.ExponentialDecay(),
+      eg2 = _eg2.callback,
+      _ad  = new Gibberish.Line(),
+      ad = _ad.callback,
+      _lfo = new Gibberish.Saw(),
+      lfo = _lfo.callback,
+      rnd = Math.random,
+      cutoff = 1000,
+      rez = 2.5,
+      env1K = .025,
+      env2K = .9,
+      env1Dur = 30 * 44.1,
+      env2Dur = 660,
+      freq = 100
+      
+  _bpf.mode = _bpf2.mode = 'BP'
+  _bpf3.mode = 'BP'
+  _bpf3.cutoff = 2400
+  
+  _bpf.cutoff = _bpf2.cutoff = 1000
+  _bpf.Q = 2
+  _bpf2.Q = 1
+      
+  Gibberish.extend(this, {
+  	name:		"clap",
+    properties:	{ amp:.5, sr:Gibberish.context.sampleRate },
+	
+  	callback: function( amp, sr ) {
+  		var out = 0, noiseBPF, noise, env;
+			      
+      noiseBPF = rnd() * 4 - 2 //* 4 - 2
+		  noiseBPF = noiseBPF > 0 ? noiseBPF : 0;
+      
+      noise = rnd() * 4 - 2 //* 16 - 8
+		  noise = noise > 0 ? noise : 0;
+      
+  		out = bpf2( bpf( noiseBPF ) ) //, cutoff, rez, 2, sr ); // mode 2 is bp
+      
+      out *= eg2( env2K, env2Dur )
+      
+      noise = bpf3( lfo( freq, noise ) * eg( env1K, env1Dur ) )//ad( 1,0, env1Dur, false ) );
+      
+      out += noise;
+  		out *= amp;
+		
+  		return out;
+  	},
+
+  	note : function( amp ) {
+  		if(typeof amp === 'number') this.amp = amp;
+		  
+      _eg2.trigger();
+      _eg.trigger();
+      _ad.setPhase(0);
+      _lfo.setPhase(0);
+
+  	},
+  })
+  .init()
+  .oscillatorInit();
+  
+  // _eg.trigger(1)
+  // _eg2.trigger(1)
+  
+  this.getBPF = function() { return _bpf; }
+  this.getBPF2 = function() { return _bpf2; }
+  this.getBPF3 = function() { return _bpf3; }
+  this.getLine = function() { return _ad; }
+  
+  this.setEnvK = function( k1,k2,d1,d2 ) {
+    env1K = k1
+    if( k2 ) env2K = k2
+    if( d1 ) env1Dur = d1
+    if( d2 ) env2Dur = d2    
+  }
+  
+  this.setFreq = function(v) { freq = v }
+  
+  this.setRez = function(v) { rez = v; }
+  this.setCutoff = function(v) { cutoff = v; }  
+  
+  this.processProperties(arguments);
+}
+Gibberish.Clap.prototype = Gibberish._oscillator;
+
 // http://www.soundonsound.com/sos/Sep02/articles/synthsecrets09.asp
 Gibberish.Cowbell = function() {
   var _s1 = new Gibberish.Square(),
@@ -7234,11 +7346,11 @@ Gibberish.Hat.prototype = Gibberish._oscillator;
 /* IMPORTANT README
 *
 * This class depends on having access to a folder of soundfonts that have been converted to
-* binary string representations. More specifically, soundfonts designed to work with MIDI.js:
+* binary string representations. More specifically, soundfonts designed to work with GenMIDI.js:
 *
 * https://github.com/gleitz/midi-js-soundfonts
 *
-* At some point it would be nice to make another soundfont system, as MIDI.js does not support
+* At some point it would be nice to make another soundfont system, as GenMIDI.js does not support
 * defining loop points.
 *
 * By default soundfonts should be found in a folder named 'resources/soundfonts' one level above
@@ -7254,19 +7366,18 @@ Gibberish.Hat.prototype = Gibberish._oscillator;
 
 (function() {
   var cents = function(base, _cents) { return base * Math.pow(2,_cents/1200) },
-      MIDI = { Soundfont: { instruments: {} } },
-      SF = MIDI.Soundfont
+      GenMIDI = { Soundfont: { instruments: {} } },
+      SF = GenMIDI.Soundfont
   
-  // TODO: GET RID OF THIS GLOBAL!!!! It's in there because we're using soundfonts meant for MIDI.js
+  // TODO: GET RID OF THIS GLOBAL!!!! It's unfortunately in there because we're using soundfonts meant for GenMIDI.js
   if( typeof window === 'object' )
-    window.MIDI = MIDI
+    window.GenMIDI = GenMIDI
   else
-    global.MIDI = MIDI
+    global.GenMIDI = GenMIDI
   
   var getScript = function( scriptPath, handler ) {
     var oReq = new XMLHttpRequest();
-
-    // oReq.addEventListener("progress", updateProgress, false);
+    
     oReq.addEventListener("load", transferComplete, false);
     oReq.addEventListener("error", function(e){ console.log( "SF load error", e ) }, false);
 
@@ -7281,12 +7392,15 @@ Gibberish.Hat.prototype = Gibberish._oscillator;
         var sizeString = new String( "" + oEvent.total )
         sizeString = sizeString[0] + '.' + sizeString[1] + ' MB'
         size.innerHTML = sizeString
+        
+        console.log( percentComplete, "%" )
       } else {
         // Unable to compute progress information since the total size is unknown
       }
     }
 
     function transferComplete( evt ) {
+      console.log("COMPLETE", scriptPath)
       var script = document.createElement('script')
       script.innerHTML = evt.srcElement ? evt.srcElement.responseText : evt.target.responseText
       document.querySelector( 'head' ).appendChild( script )
@@ -7435,6 +7549,7 @@ Gibberish.Hat.prototype = Gibberish._oscillator;
     
     // if already loaded, or if passed a buffer to use...
     if( !SF.instruments[ this.instrumentFileName ] && typeof pathToResources !== 'object' ) {
+      console.log("DOWNLOADING SOUNDFONT")
       getScript( 'resources/soundfonts/' + this.instrumentFileName + '-mp3.js', decodeBuffers.bind( null, this ) )
     }else{
       if( typeof pathToResources === 'object' ) {
@@ -7451,7 +7566,89 @@ Gibberish.Hat.prototype = Gibberish._oscillator;
   Gibberish.SoundFont.storage = SF
   Gibberish.SoundFont.prototype = Gibberish._oscillator;
 })()
-  return Gibberish; 
+  
+Gibberish.Vocoder = function() {
+  var encoders = [], decoders = [], amps = [], store = [], 
+      abs = Math.abs, sqrt = Math.sqrt, phase = 0, output = [0,0],
+      encoderObjects = [], decoderObjects = [], envelopeSize = 128,
+      history = [],
+      sums = [],
+      env = [],
+      index = 0,
+      original_cutoffs = [
+        330, 440, 554, 880, 1100, 1660, 2220, 3140
+      ],
+      cutoffs = [],
+      startFreq = arguments[3] || 330,
+      endFreq   = arguments[4] || 3200,
+      numberOfBands = arguments[2] || 16,
+      Q = arguments[5] || .15;
+  
+	this.name =	"vocoder";
+  
+	this.properties = {
+    carrier:  arguments[0] || null,
+    modulator:arguments[1] || null,
+    amp:		  1,
+	  pan:		  0
+  }
+
+  // filter band formula adapted from https://github.com/cwilso/Vocoder/blob/master/js/vocoder.js
+	var totalRangeInCents = 1200 * Math.log( endFreq / startFreq ) / Math.LN2,
+	    centsPerBand = totalRangeInCents / numberOfBands,
+	    scale = Math.pow( 2, centsPerBand / 1200 ),  // This is the scaling for successive bands
+	    currentFreq = startFreq;
+
+	for(var i = 0; i < numberOfBands; i++) {
+		encoderObjects[i] = new Gibberish.Biquad({ mode:'BP', Q:Q, cutoff:currentFreq });
+    encoders[i] = encoderObjects[i].callback
+		decoderObjects[i] = new Gibberish.Biquad({ mode:'BP', Q:Q, cutoff:currentFreq });
+    decoders[i] = decoderObjects[i].callback    
+		
+    history[ i ] = [ 0 ]
+    sums[ i ] = 0
+    env[ i ] = 0
+    
+		currentFreq = currentFreq * scale;
+	}
+  
+  //console.log( numberOfBands, startFreq, endFreq, Q )
+  
+  this.callback = function( carrier, modulator, amp, pan ) {
+    var historyIndex = ( index + 1 ) % envelopeSize,
+        modValue = typeof modulator !== 'number' ? modulator[0] + modulator[1] : modulator,
+        carrierValue = typeof carrier !== 'number' ? carrier[0] + carrier[1] : carrier,
+        encValue, out = 0
+        
+		for(var i = 0; i < numberOfBands; i++) {
+      encValue = abs( encoders[ i ]( modValue ) )
+      
+      sums[ i ] += encValue
+      sums[ i ] -= history[ i ][ index ]
+      
+      history[ i ][ index ] = encValue
+      history[ i ][ historyIndex ] = history[ i ][ historyIndex ] ? history[ i ][ historyIndex ] : 0
+      
+      env[ i ] = sums[ i ] / envelopeSize
+      
+      out += decoders[i]( carrierValue ) * env[ i ];
+		}
+    index = historyIndex
+	
+    output[0] = output[1] = out * amp * 16; // look, ma... 16 IS MAGIC!!!
+
+		return output;
+	}
+  
+  this.getEncoders = function() { return encoderObjects }
+  this.getDecoders = function() { return decoderObjects }  
+  
+  this.init();
+  this.oscillatorInit();
+	//this.processProperties(arguments);
+}
+Gibberish.Vocoder.prototype = Gibberish._synth
+return Gibberish; 
 })
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 },{}],3:[function(require,module,exports){
@@ -7628,18 +7825,20 @@ Audio = {
     $.extend( target, Audio.Seqs )    
     $.extend( target, Audio.Samplers )
     $.extend( target, Audio.PostProcessing )
+    $.extend( target, Audio.Vocoder )
     
     target.Theory = Audio.Theory
     $.extend( target, Audio.Analysis ) 
     
     // target.future = Gibber.Utilities.future
     // target.solo = Gibber.Utilities.solo    
-    
+    target.Score = Audio.Score    
 		target.Clock = Audio.Clock
     target.Seq = Audio.Seqs.Seq
     target.Arp = Audio.Arp // move Arp to sequencers?
     target.ScaleSeq = Audio.Seqs.ScaleSeq
     target.SoundFont = Audio.SoundFont
+    target.Speak = Audio.Speak
 
     target.Rndi = Audio.Core.Rndi
     target.Rndf = Audio.Core.Rndf     
@@ -7819,15 +8018,19 @@ Audio = {
     }
   
     Audio.Master.inputs.length = arguments.length
-  
-    Audio.Clock.reset()
+    
+    if( Audio.Clock.shouldResetOnClear !== false ) {
+      Audio.Clock.reset()
+    }
   
     Audio.Master.fx.remove()
   
     Audio.Master.amp = 1
     
     Audio.Core.clear()
-
+    
+    Audio.Clock.seq.connect()
+    
     Audio.Core.out.addConnection( Audio.Master, 1 );
     Audio.Master.destinations.push( Audio.Core.out );
   
@@ -7933,26 +8136,28 @@ Audio = {
     }),
       
     replaceWith: function( replacement ) {
-      for( var i = 0; i < this.destinations.length; i++ ) {
-        replacement.connect( this.destinations[i] )
-      }
+      if( replacement.connect ) {
+        for( var i = 0; i < this.destinations.length; i++ ) {
+          replacement.connect( this.destinations[i] )
+        }
       
-      for( var i = 0; i < this.sequencers.length; i++ ) {
-        this.sequencers[ i ].target = replacement
-        replacement.sequencers.push( this.sequencers[i] )
-      }
+        for( var i = 0; i < this.sequencers.length; i++ ) {
+          this.sequencers[ i ].target = replacement
+          replacement.sequencers.push( this.sequencers[i] )
+        }
       
-      for( var i = 0; i < this.mappingObjects.length; i++ ) {
-        var mapping = this.mappingObjects[ i ]
+        for( var i = 0; i < this.mappingObjects.length; i++ ) {
+          var mapping = this.mappingObjects[ i ]
         
-        if( mapping.targets.length > 0 ) {
-          for( var j = 0; j < mapping.targets.length; j++ ) {
-            var _mapping = mapping.targets[ j ]
+          if( mapping.targets.length > 0 ) {
+            for( var j = 0; j < mapping.targets.length; j++ ) {
+              var _mapping = mapping.targets[ j ]
             
-            if( replacement.mappingProperties[ mapping.name ] ) {
-              _mapping[ 0 ].mapping.replace( replacement, mapping.name, mapping.Name )
-            }else{ // replacement object does not have property that was assigned to mapping
-              _mapping[ 0 ].mapping.remove()
+              if( replacement.mappingProperties[ mapping.name ] ) {
+                _mapping[ 0 ].mapping.replace( replacement, mapping.name, mapping.Name )
+              }else{ // replacement object does not have property that was assigned to mapping
+                _mapping[ 0 ].mapping.remove()
+              }
             }
           }
         }
@@ -8050,14 +8255,17 @@ Audio.Envelopes =      require( './audio/envelopes' )( Gibber )
 Audio.Percussion =     require( './audio/drums' )( Gibber )
 Audio.Input =          require( './audio/audio_input' )( Gibber )
 Audio.Samplers =       require( './audio/sampler' )( Gibber )
+// Audio.Speak =          require( './audio/speak' )( Gibber )
+Audio.Vocoder =        require( './audio/vocoder' )( Gibber )
 Audio.PostProcessing = require( './audio/postprocessing' )( Gibber )
 Audio.Arp =            require( './audio/arp' )( Gibber )
 Audio.SoundFont =      require( './audio/soundfont' )( Gibber )
+Audio.Score =          require( './audio/score')( Gibber )
 
 return Audio
 
 }
-},{"../external/freesound":3,"./audio/analysis":6,"./audio/arp":7,"./audio/audio_input":8,"./audio/bus":9,"./audio/clock":10,"./audio/drums":11,"./audio/envelopes":12,"./audio/fx":13,"./audio/gibber_freesound":14,"./audio/oscillators":15,"./audio/postprocessing":16,"./audio/sampler":17,"./audio/seq":18,"./audio/soundfont":19,"./audio/synths":20,"./audio/theory":21,"gibberish-dsp":2}],6:[function(require,module,exports){
+},{"../external/freesound":3,"./audio/analysis":6,"./audio/arp":7,"./audio/audio_input":8,"./audio/bus":9,"./audio/clock":10,"./audio/drums":11,"./audio/envelopes":12,"./audio/fx":13,"./audio/gibber_freesound":14,"./audio/oscillators":15,"./audio/postprocessing":16,"./audio/sampler":17,"./audio/score":18,"./audio/seq":19,"./audio/soundfont":20,"./audio/synths":21,"./audio/theory":22,"./audio/vocoder":23,"gibberish-dsp":2}],6:[function(require,module,exports){
 module.exports = function( Gibber ) {
   "use strict"
   
@@ -8285,7 +8493,7 @@ Arp = function(notation, beats, pattern, mult, scale) {
 return Arp
 
 }
-},{"../../external/teoria.min":4,"./seq":18}],8:[function(require,module,exports){
+},{"../../external/teoria.min":4,"./seq":19}],8:[function(require,module,exports){
 module.exports = function( Gibber ) { 
   "use strict"
   
@@ -8498,6 +8706,7 @@ var Clock = {
   codeToExecute : [],
   signature: { lower: 4, upper: 4 },
   sequencers:[],
+  shouldResetOnClear:true,
   timeProperties : [ 'attack', 'decay', 'sustain', 'release', 'offset', 'time' ],
   phase : 0,
   export: function( target ) {
@@ -8547,7 +8756,7 @@ var Clock = {
     this.phase = 0
     this.currentBeat = 0
     this.rate = 1
-    this.start()
+    this.start( false )
   },
   
   tap : function() {
@@ -8569,15 +8778,18 @@ var Clock = {
   },
   
   start : function( shouldInit ) {    
+    var _phase = 0
+    
     if( shouldInit ) {
       $.extend( this, {
         properties: { rate: 1 },
         name:'master_clock',
         callback : function( rate ) {
+          _phase++ 
           return rate
         }
       })
-    
+     
       this.__proto__ = new Gibberish.ugen()
       this.__proto__.init.call( this )
 
@@ -8606,18 +8818,24 @@ var Clock = {
         rate : { min: .1, max: 2, output: LINEAR, timescale: 'audio' },
         bpm : { min: 20, max: 200, output: LINEAR, timescale: 'audio' },        
       })
+      
+      this.setPhase = function( v ) { _phase = v }
+      this.getPhase = function() { return _phase }
+      
+      Clock.seq = new Gibberish.PolySeq({
+        seqs : [{
+          target:Clock,
+          values: [ Clock.processBeat.bind( Clock ) ],
+          durations:[ 1/4 ],
+        }],
+        rate: Clock,
+      })
+      Clock.seq.connect().start()
+      Clock.seq.timeModifier = Clock.time.bind( Clock )
+    }else{
+      Clock.seq.setPhase(0)
+      Clock.seq.connect().start()
     }
-    
-    Clock.seq = new Gibberish.PolySeq({
-      seqs : [{
-        target:Clock,
-        values: [ Clock.processBeat.bind( Clock ) ],
-        durations:[ 1/4 ],
-      }],
-      rate: Clock,
-    })
-    Clock.seq.connect().start()
-    Clock.seq.timeModifier = Clock.time.bind( Clock )
   },
   
   addMetronome: function( metronome ) {
@@ -8650,15 +8868,14 @@ var Clock = {
   
   beats : function(val) {
     var sampleRate = typeof Gibberish.context !== 'undefined' ? Gibberish.context.sampleRate : 44100,
-        samplesPerBeat = sampleRate / ( Clock.baseBPM / 60 )
+        beatsPerSecond = Clock.bpm / 60,
+        samplesPerBeat = sampleRate / beatsPerSecond
         
-    return samplesPerBeat * ( val * ( 4 / Clock.signature.lower ) );
+    return samplesPerBeat * val
   },
   
   Beats : function(val) {
-    return function() {
-      return Gibber.Clock.beats( val )
-    }
+    return Gibber.clock.beats.bind( null, val )
   },
   
   measures: function( val ) {
@@ -8703,6 +8920,7 @@ module.exports = function( Gibber ) {
         'Cowbell',
         'Clave',
         'Tom',
+        'Clap'
       ],
       _mappingProperties = {
         Drums: {
@@ -8743,6 +8961,10 @@ module.exports = function( Gibber ) {
           out: { min: 0, max: 1, output: LINEAR, timescale: 'audio', dimensions:1 },
           amp: { min: 0, max: 1, output: LOGARITHMIC,timescale: 'audio',}, },
         Tom     : { 
+          out: { min: 0, max: 1, output: LINEAR, timescale: 'audio', dimensions:1 },
+          amp: { min: 0, max: 1, output: LOGARITHMIC,timescale: 'audio',}, 
+        },
+        Clap     : { 
           out: { min: 0, max: 1, output: LINEAR, timescale: 'audio', dimensions:1 },
           amp: { min: 0, max: 1, output: LOGARITHMIC,timescale: 'audio',}, 
         },
@@ -9033,7 +9255,7 @@ module.exports = function( Gibber ) {
     
     obj.start = function() { obj.seq.start( true ) }
     obj.stop = function() { obj.seq.stop() }
-    obj.shuffle = function() { obj.seq.shuffle() }
+    obj.shuffle = function() { obj.note.values.shuffle() }
     obj.reset = function() { obj.seq.reset() }
 
     Gibber.createProxyMethods( obj, [ 'play','stop','shuffle','reset','start','send','note' ] )
@@ -9374,6 +9596,13 @@ module.exports = function( Gibber ) {
   	},
   };
   Percussion.Drums.kits.default = Percussion.Drums.kits.electronic;
+  
+  Percussion.Presets.Kick = {
+    short: { decay:.1, amp:.75 }
+  }
+  Percussion.Presets.Snare = {
+    crack: { snappy:1, offset:1/4 }
+  }
   
   return Percussion
   
@@ -9747,6 +9976,7 @@ module.exports = function( Gibber ) {
         
         obj.toString = function() { return '> ' + name }
         
+        if( obj.presetInit ) obj.presetInit() 
         return obj
       }
     })()
@@ -10722,6 +10952,331 @@ module.exports = function( Gibber ) {
   return Samplers
 }
 },{"./clock":10,"gibberish-dsp":2}],18:[function(require,module,exports){
+/*
+Score is a Seq(ish) object, with pause, start / stop, rewind, fast-forward.
+It's internal phase is 
+
+Score has start() method to start it running. next() advances to next element,
+regardless of whether or not the score is running, and stats the transport running.
+rewind() moves the score index to the first position.
+*/
+
+/*
+Passed Timing           Result
+=============           ======
+Numeric literal         place function in timeline and store reference
+a Function              callback. register to receive and advance. must use pub/sub.
+Score.wait             pause until next() method is called
+*/
+
+module.exports = function( Gibber ) {
+
+"use strict"
+
+var Gibberish = require( 'gibberish-dsp' )
+
+var ScoreProto = {
+  start: function() { 
+    if( !this.codeblock ) {
+      this.connect()
+    }
+    this.isPaused = false
+  
+    return this
+  },
+  stop:  function() { 
+    this.isPaused = true  
+    return this
+  },
+  
+  loop: function( loopPause ) {
+    this.loopPause = loopPause || 0
+    this.shouldLoop = !this.shouldLoop
+    
+    return this
+  },
+  
+  pause: function() {
+    this.isPaused = true
+    
+    return this
+  },
+  
+  next: function() {
+    if( !this.codeblock ) {
+      this.connect()
+    }
+    this.isPaused = false
+    
+    return this
+  },
+}
+
+var proto = new Gibberish.ugen()
+
+$.extend( proto, ScoreProto )
+
+var Score = function( data, opts ) {
+  if( ! ( this instanceof Score ) ) {
+    var args = Array.prototype.slice.call( arguments, 0 )
+    return Gibber.construct( Score, args )
+  }
+  
+  if( typeof opts === 'undefined' ) opts = {}
+  
+  this.timeline = []
+  this.schedule = []
+  this.shouldLoop = false
+  this.loopPause = 0
+  
+  for( var i = 0; i < data.length; i+=2 ) {
+    this.schedule.push( data[ i ] )
+    this.timeline.push( data[ i+1 ] )    
+  }
+  
+  var phase = 0, 
+      index = 0,
+      timeline = this.timeline,
+      schedule = this.schedule,
+      self = this,
+      loopPauseFnc = function() {
+        self.nextTime = phase = 0
+        index = -1
+        self.timeline.pop()
+      }
+      
+  $.extend( this, {
+    properties: { rate: 1, isPaused:true, nextTime:0  },
+    name:'score',
+    getIndex: function() { return index },
+    callback : function( rate, isPaused, nextTime ) {
+      if( !isPaused ) {
+        if( phase >= nextTime && index < timeline.length ) {
+          
+          var fnc = timeline[ index ],
+              shouldExecute = true
+                    
+          index++
+          
+          if( index <= timeline.length - 1 ) {
+            var time = schedule[ index ]
+            
+            if( typeof time === 'number' && time !== Score.wait ) {
+              self.nextTime = phase + time
+            }else{
+              if( time === Score.wait ) {
+                self.isPaused = true
+              }else if( time.owner instanceof Score ) {
+                self.isPaused = true
+                time.owner.oncomplete.listeners.push( self )
+                // shouldExecute = false // doesn't do what I think it should do... 
+              }
+            }
+          }else{
+            if( self.shouldLoop ) {
+              if( timeline[ timeline.length - 1 ] !== loopPauseFnc ) {
+                timeline.push( loopPauseFnc )
+              }
+              self.nextTime = phase + self.loopPause
+            }else{
+              self.isPaused = true
+            }
+            self.oncomplete()
+          }
+          if( shouldExecute && fnc ) {
+            if( fnc instanceof Score ) {
+              if( !fnc.codeblock ) {
+                fnc.start()
+              }else{
+                fnc.rewind().next()
+              }
+            }else{
+              fnc()
+            }
+          }
+        }
+        phase += rate
+      }
+      return 0
+    },
+    rewind : function() { 
+      phase = index = 0 
+      this.nextTime = this.schedule[ 0 ]
+      return this
+    },
+    oncomplete: function() {
+      // console.log("ON COMPLETE", this.oncomplete.listeners )
+      var listeners = this.oncomplete.listeners
+      for( var i = listeners.length - 1; i >= 0; i-- ) {
+        var listener = listeners[i]
+        if( listener instanceof Score ) {
+          listener.next()
+        }
+      }
+    }
+  })
+  
+  this.oncomplete.listeners = []
+  this.oncomplete.owner = this
+  
+  this.init()
+  
+  this.nextTime = this.schedule[ 0 ]
+  
+  var _rate = this.rate,
+      oldRate  = this.__lookupSetter__( 'rate' )
+   
+  Object.defineProperty( this, 'rate', {
+    get : function() { return _rate },
+    set : function(v) {
+      _rate = Mul( Gibber.Clock, v )
+      oldRate.call( this, _rate )
+    }
+  })
+  
+  this.rate = this.rate // trigger meta-programming tie to master clock
+  
+  Gibber.createProxyProperties( this, {
+    rate : { min: .1, max: 2, output: 0, timescale: 'audio' },
+  })
+}
+
+Score.wait = -987654321
+Score.combine = function() {
+  var score = [ 0, arguments[ 0 ] ]
+  
+  for( var i = 1; i < arguments.length; i++ ) {
+    var timeIndex = i * 2,
+        valueIndex = timeIndex +  1,
+        previousValueIndex = timeIndex - 1
+
+    score[ timeIndex  ] = score[ previousValueIndex ].oncomplete
+    score[ valueIndex ] = arguments[ i ]
+  }
+  
+  return Score( score )
+}
+
+Score.prototype = proto
+
+return Score
+
+}
+
+/*
+a = Score([
+  0, console.log.bind( null, 'test1'),
+  seconds(.5),console.log.bind( null, 'test2'),
+  Score.wait, null,
+  seconds(.5),console.log.bind( null, 'test3'),
+  seconds(.5),console.log.bind( null, 'test4'),
+  seconds(.5),function() { a.rewind(); a.next() }
+])
+
+b = Score([
+  100, console.log.bind(null,"B"),
+  100, console.log.bind(null,"F"),  
+  a.oncomplete, function() {
+  	console.log("C")
+  }
+])
+.start()
+
+a.start()
+
+-----
+a = Score([
+  0, console.log.bind( null, 'test1'),
+  seconds(.5),console.log.bind( null, 'test2'),
+  
+  Score.wait, null,
+  
+  seconds(.5),console.log.bind( null, 'test3'),
+  
+  seconds(.5), Score([
+    0, console.log.bind(null,"A"),
+    beats(2), console.log.bind(null,"B")
+  ]),
+  
+  Score.wait, null,
+  
+  seconds(.5),function() { a.rewind(); a.next() }
+]).start()
+
+-----
+synth = Synth('bleep')
+synth2 = Synth('bleep', {maxVoices:4})
+
+// you need to uncomment the line below after the kick drum comes in
+// and execute it
+
+score.next()
+
+score = Score([
+  0, synth.note.score( 'c4', 1/4 ),
+  
+  measures(1), synth.note.score( ['c4','c5'], 1/8 ),
+  
+  measures(1), synth.note.score( ['c2','c3','c4','c5'], 1/16 ),
+  
+  measures(1), function() {
+    kick = Kick().note.seq( 55,1/4 )
+  },
+  
+  Score.wait, null,
+  
+  0, synth2.note.score('bb4',1/4 ),
+  
+  measures(1), synth2.chord.score( [['bb4','g4']], 1/4 ),
+  
+  measures(2), synth2.chord.score( [['c5','f4']], 1/4 ),
+  
+  measures(2), function() {
+    synth2.chord.seq( [['eb4','bb4','d5']], 1/6 )
+    synth2.note.seq.stop()
+    synth2.fx.add( Delay(1/9,.35) )
+    
+    synth2.fadeOut(32)
+  },
+  
+  measures(4), function() {
+    ks = Pluck()
+    	.note.seq( Rndi(100,600), 1/16 )
+    	.blend.seq( Rndf() )
+    	.fx.add( Schizo('paranoid') )
+    
+    Clock.rate = Line( 1, 1.1, 8 )
+  },
+  
+  measures(8), function() {
+		Master.fadeOut( 8 )
+  },
+  
+  measures(8), Gibber.clear
+  
+]).start()
+
+------
+
+synth = Synth('bleep')
+
+verse =  Score([ beats(1/2), synth.note.bind( synth, 'c4' ) ])
+chorus = Score([ beats(1/2), synth.note.bind( synth, 'd4' ) ])
+bridge = Score([ beats(1/2), synth.note.bind( synth, 'e4' ) ])
+
+song = Score([
+  0,                 verse,
+  verse.oncomplete,  chorus,
+  chorus.oncomplete, verse,
+  verse.oncomplete,  chorus,
+  chorus.oncomplete, bridge,
+  bridge.oncomplete, chorus  
+])
+
+song.start()
+
+*/
+},{"gibberish-dsp":2}],19:[function(require,module,exports){
 module.exports = function( Gibber ) {
   //"use strict"
   
@@ -10849,6 +11404,38 @@ module.exports = function( Gibber ) {
             
             _seq.values = valuesPattern
             
+            _seq.stop = function() { _seq.shouldStop = true } 
+    
+            // TODO: property specific stop/start/shuffle etc. for polyseq
+            _seq.start = function() {
+              _seq.shouldStop = false
+              seq.timeline[0] = [ _seq ]                
+              seq.nextTime = 0
+      
+              if( !seq.isRunning ) { 
+                seq.start( false, priority )
+              }
+            }
+    
+            _seq.repeat = function( numberOfTimes ) {
+              var repeatCount = 0
+      
+              var filter = function( args, ptrn ) {
+                if( args[2] % (ptrn.getLength() - 1) === 0 && args[2] !== 0) {
+                  repeatCount++
+                  if( repeatCount === numberOfTimes ) {
+                    ptrn.seq.stop()
+                  }
+                }
+                return args
+              }
+      
+              valuesPattern.filters.push( filter )
+            }
+            
+            valuesPattern.seq = _seq
+            //durationsPattern.seq = _seq 
+            
             obj.seqs.push( _seq )
             keyList.push( key )
           }
@@ -10894,7 +11481,9 @@ module.exports = function( Gibber ) {
         values: Array.isArray( arguments[0] ) ? arguments[0] : [ arguments[ 0 ] ],
         durations: Gibber.Clock.time( arguments[ 1 ] )
       }]
-            
+      if( typeof arguments[1] === 'function' || Array.isArray( arguments[1] ) ) {
+        obj.seqs[0].durations = arguments[ 1  ]
+      }
       keyList.push('functions')
     }
       
@@ -10977,6 +11566,8 @@ module.exports = function( Gibber ) {
       
           console.log("SEQ KILL", this )
         this.stop().disconnect()
+        
+        Seq.children.splice( Seq.children.indexOf( this ), 1 )
       },
       applyScale : function() {
         // for( var i = 0; i < this.seqs.length; i++ ) {
@@ -11000,11 +11591,25 @@ module.exports = function( Gibber ) {
           this.seqs[ i ].values[0].shuffle()
         }
       },
+      // repeat : function( numberOfTimes ) { 
+      //   var repeatCount = 0
+      //   
+      //   var filter = function( args, ptrn ) {
+      //     if( args[2] % (ptrn.getLength() - 1) === 0 && args[2] !== 0) {
+      //       ptrn.seq.stop()
+      //     }
+      //     return args
+      //   }
+      //   
+      // }
     })
+    
+    Seq.children.push( seq )
+    
     return seq
   }
   
-
+  Seq.children = []
   
   var ScaleSeq = function() {
     var args = arguments[0],
@@ -11026,7 +11631,7 @@ module.exports = function( Gibber ) {
   
   return Seqs 
 }
-},{"gibberish-dsp":2}],19:[function(require,module,exports){
+},{"gibberish-dsp":2}],20:[function(require,module,exports){
 module.exports = function( Gibber, pathToSoundFonts ) {
   var Gibberish = require( 'gibberish-dsp' ),
       curves = Gibber.outputCurves,
@@ -11171,7 +11776,7 @@ module.exports = function( Gibber, pathToSoundFonts ) {
   
   return SoundFont
 }
-},{"./theory":21,"gibberish-dsp":2}],20:[function(require,module,exports){
+},{"./theory":22,"gibberish-dsp":2}],21:[function(require,module,exports){
 module.exports = function( Gibber ) {
   "use strict"
   
@@ -11256,7 +11861,7 @@ module.exports = function( Gibber ) {
       damping :{ min: 0, max: 1, output: LINEAR, timescale: 'audio' },
       pan: { min: -1, max: 1, output: LOGARITHMIC,timescale: 'audio',},
       out: { min: 0, max: 1, output: LINEAR, timescale: 'audio', dimensions:1 },     
-    },
+    }
   }
 
   for( var i = 0; i < types.length; i++ ) {
@@ -11264,41 +11869,35 @@ module.exports = function( Gibber ) {
     (function() {
       var type = Array.isArray( types[ i ] ) ? types[ i ][ 0 ] : types[ i ],
           name = Array.isArray( types[ i ] ) ? types[ i ][ 1 ] : types[ i ]
-     
+
       Synths[ name ] = function() {
-        var args = Array.prototype.slice.call(arguments),
+        var args = Array.prototype.slice.call( arguments, 0 ),
             obj,
             mv = 1,
             adsr = false,
             scale,
-            requireReleaseTrigger = false
+            requireReleaseTrigger = false,
+            opts = {},
+            optionsNum = typeof args[0] === 'string' ? 1 : 0
         
-        if( typeof args[0] === 'object' ) {
-          if(typeof args[0].maxVoices !== 'undefined') { 
-            if( args[0].maxVoices ) mv = args[0].maxVoices
+        Gibber.processArguments2( opts, args, name )
+        
+        for( var key in opts ) {
+          if( Gibber.Audio.Clock.timeProperties.indexOf( key ) > -1 ) {
+            opts[ key ] = Gibber.Clock.time( opts[key] )
           }
-          if( typeof args[0].useADSR !== 'undefined' ) {
-            adsr = args[0].useADSR
-            if( typeof args[0].requireReleaseTrigger !== 'undefined' ) {
-              requireReleaseTrigger = args[0].requireReleaseTrigger
-            }
-          }else{
-            requireReleaseTrigger = false
-          }
-          if( typeof args[0].useADSR !== 'undefined' ) {
-            adsr = args[0].useADSR
-          }
-          if( typeof args[0].scale !== 'undefined' ) {
-            scale = args[0].scale
-          } 
         }
         
-        obj = new Gibberish[ type ]({ maxVoices: mv, useADSR:adsr, requireReleaseTrigger:requireReleaseTrigger, scale:scale }).connect( Gibber.Master )
+        obj = new Gibberish[ type ]( opts ).connect( Gibber.Master )
         obj.type = 'Gen'
         
         $.extend( true, obj, Gibber.Audio.ugenTemplate )
-        
+
         obj.fx.ugen = obj
+        
+        //Gibber.processArguments2( obj, args, name )        
+        
+        if( name === 'Vocoder' ) return obj
         
         if( name === 'Mono' ) {
           obj.note = function( _frequency, amp ) {
@@ -11315,7 +11914,9 @@ module.exports = function( Gibber ) {
                   this.frequency = _frequency
                 }
               }
-        
+              
+              this.lastFrequency = this.frequency
+              
               if( obj.envelope.getState() > 0 ) obj.envelope.run();
             }
           }
@@ -11364,13 +11965,18 @@ module.exports = function( Gibber ) {
         //obj, _key, shouldSeq, shouldRamp, dict, _useMappings, priority
         Gibber.createProxyProperties( obj, _mappingProperties[ name ] )
         
-        Gibber.createProxyMethods( obj, [ 'note', 'chord', 'send' ] )
+        obj.trig = function() {
+          this.note( this.lastFrequency )
+        }
+        
+        Gibber.createProxyMethods( obj, [ 'note', 'chord', 'send', 'trig' ] )
                 
         obj.name = name 
         
+
         //console.log( "PROCESS", args, _mappingProperties[ name ] )
         
-        Gibber.processArguments2( obj, args, obj.name )
+        //Gibber.processArguments2( obj, args, obj.name )
         
         obj.toString = function() { return name }
         
@@ -11407,6 +12013,7 @@ module.exports = function( Gibber ) {
           }
         })
         
+        if( obj.presetInit ) obj.presetInit() 
         return obj
       }
     })()
@@ -11416,6 +12023,7 @@ module.exports = function( Gibber ) {
   Synths.Presets.Synth = {
   	short:  { attack: 44, decay: 1/16, },
   	bleep:  { waveform:'Sine', attack:44, decay:1/16 },
+    bleepEcho: { waveform:'Sine', attack:44, decay:1/16, presetInit:function() { this.fx.add( Delay(1/6,.85 ) ) } },
     cascade: { waveform:'Sine', maxVoices:10, attack:Clock.maxMeasures, decay:Clock.beats(1/32),
       presetInit: function() { 
         this.fx.add( Gibber.Audio.FX.Delay(1/9,.2), Gibber.Audio.FX.Flanger() )
@@ -11443,7 +12051,7 @@ module.exports = function( Gibber ) {
   }
   
   Synths.Presets.Mono = {
-  	short : { attack: 44, decay: 1/16,},
+  	short : { attack: 44, decay: 1/16 },
   
   	lead : {
   		presetInit : function() { this.fx.add( Gibber.Audio.FX.Delay(1/4, .35), Gibber.Audio.FX.Reverb() ) },
@@ -11625,7 +12233,7 @@ module.exports = function( Gibber ) {
 
 }
 
-},{"./clock":10,"gibberish-dsp":2}],21:[function(require,module,exports){
+},{"./clock":10,"gibberish-dsp":2}],22:[function(require,module,exports){
 module.exports = function( Gibber ) {
   "use strict"
 
@@ -11711,6 +12319,7 @@ var Theory = {
     // obj, _key, shouldSeq, shouldRamp, dict, _useMappings, priority
     
     that.gibber = true // needed since createProxyProperties isn't called where this is normally set
+                              // obj, _key, shouldSeq, shouldRamp, dict, _useMappings, priority
     Gibber.createProxyProperty( that, 'root', true, false, null, false, 1 )
     Gibber.createProxyProperty( that, 'mode', true, false, null, false, 1 )
     //Gibber.defineSequencedProperty( that, 'root', 1 )
@@ -11901,7 +12510,109 @@ var Theory = {
 return Theory
 
 }
-},{"../../external/teoria.min":4}],22:[function(require,module,exports){
+},{"../../external/teoria.min":4}],23:[function(require,module,exports){
+module.exports = function( Gibber ) {
+  "use strict"
+  
+  var Vocoder = { Presets: {} },
+      Gibberish = require( 'gibberish-dsp' ),
+      $ = Gibber.dollar,
+      Clock = require( './clock' )( Gibber ),
+      curves = Gibber.outputCurves,
+      LINEAR = curves.LINEAR,
+      LOGARITHMIC = curves.LOGARITHMIC,
+      mappingProperties =  {
+        amp: { min: 0, max: 1, output: LOGARITHMIC,timescale: 'audio',},
+        pan: { min: -1, max: 1, output: LOGARITHMIC,timescale: 'audio',},
+        out: { min: 0, max: 1, output: LINEAR, timescale: 'audio', dimensions:1 },     
+      }
+      
+  Vocoder.Vocoder = function( carrier, modulator, numBands, startFreq, endFreq, Q ) {
+    var vocoder = new Gibberish.Vocoder( carrier, modulator, numBands, startFreq, endFreq, Q ).connect( Gibber.Master )
+    
+    vocoder.type = 'Gen'
+    
+    $.extend( true, vocoder, Gibber.Audio.ugenTemplate )
+    
+    vocoder.fx.ugen = vocoder
+    
+    return vocoder
+  }
+  
+  Vocoder.Robot = function( _options ) {
+    var carrier, modulator, options = _options || {}, robot
+    
+    robot = Gibber.Audio.Vocoder.Vocoder( null, null, options.numBands || 16 )
+    
+    robot.disconnect()
+    
+    if( isNaN( options.maxVoices ) ) { options.maxVoices = 1 }
+    if( isNaN( options.resonance ) ) { options.resonance = 4 }
+    if( isNaN( options.attack    ) ) { options.attack = ms(1) }
+    if( isNaN( options.decay     ) ) { options.decay = measures(8) }
+    if( isNaN( options.pulsewidth) ) { options.pulsewidth = .05 }  
+
+    robot.carrier = Gibber.Audio.Synths.Synth2( options )
+    robot.note = robot.carrier.note.bind( robot )
+    robot._note = robot.carrier._note.bind( robot )
+    robot.chord = robot.carrier.chord.bind( robot )
+    //robot._note = robot.carrier._note.bind( robot )
+    robot.carrier._
+    
+    // in case robot.say.seq is called before module is loaded...
+    var storeSayValues, storeSayDurations, storeInit = false
+    robot.say = function( values, durations ) {
+      if( storeInit === false ) {
+        storeSayValues = values
+        storeSayDurations = durations
+        storeInit = true
+      }
+    }
+    
+    function initRobot() {
+      robot.modulator = Speak( options )
+      robot.modulator._
+
+      robot.say = robot.modulator.say.bind( robot )
+      Gibber.defineSequencedProperty( robot, 'say' )
+      
+      if( storeInit ) {
+        robot.say.values = storeSayValues
+        robot.say.durations = storeSayDurations
+      }
+      
+      robot.connect()
+    }
+    
+    if( ! Gibber.Modules[ 'gibber/publications/SpeakLib' ] ) {
+      Gibber.import( 'gibber/publications/SpeakLib' ).done( function(speak) {
+        var clear = setInterval( function() {
+          if( typeof Speak !== 'undefined' ) {
+            initRobot()
+            clearInterval( clear )
+          } 
+        }, 250 )
+      })
+    }else{
+      initRobot()
+    }
+
+    Gibber.defineSequencedProperty( robot, 'say' )
+    Gibber.defineSequencedProperty( robot, 'chord' )    
+    Gibber.defineSequencedProperty( robot, 'note' )
+    
+    $.extend( true, robot, Gibber.Audio.ugenTemplate )
+    
+    Gibber.createProxyProperties( robot, mappingProperties )
+    
+    
+    return robot
+  }
+
+  return Vocoder
+}
+      
+},{"./clock":10,"gibberish-dsp":2}],24:[function(require,module,exports){
 (function (global){
 !function() {
 
@@ -11994,7 +12705,187 @@ module.exports = $
 
 }()
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],23:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
+module.exports = function( Gibber ) {
+
+"use strict"
+
+var flatten = function(){
+   var flat = [];
+   for (var i = 0, l = this.length; i < l; i++){
+       var type = Object.prototype.toString.call(this[i]).split(' ').pop().split(']').shift().toLowerCase();
+       if (type) { flat = flat.concat(/^(array|collection|arguments|object)$/.test(type) ? flatten.call(this[i]) : this[i]); }
+   }
+   return flat;
+}
+
+var createStartingArray = function( length, ones ) {
+  var out = []
+  for( var i = 0; i < ones; i++ ) {
+    out.push([1])
+  }
+  for( var j = i; j < length; j++ ) {
+    out.push(0)
+  }
+  return out
+}
+
+var printArray = function( array ) {
+  var str = ''
+  for( var i = 0; i < array.length; i++ ) {
+    var outerElement = array[ i ]
+    if( Array.isArray( outerElement ) ) {
+      str += '['
+      for( var j = 0; j < outerElement.length; j++ ) {
+        str += outerElement[ j ]
+      }
+      str += '] '
+    }else{
+      str += outerElement + ''
+    }
+  }
+
+  return str
+}
+
+var arraysEqual = function(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
+  if (a.length != b.length) return false;
+
+  for (var i = 0; i < a.length; ++i) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+var getLargestArrayCount = function( input ) {
+  var length = 0, count = 0
+
+  for( var i = 0; i < input.length; i++ ) {
+    if( Array.isArray( input[ i ] ) ) { 
+      if( input[ i ].length > length ) {
+        length = input[ i ].length
+        count = 1
+      }else if( input[ i ].length === length ) {
+        count++
+      }
+    }
+  }
+
+  return count
+}
+
+var Euclid = function( ones,length, dur ) {
+  var count = 0,
+      out = createStartingArray( length, ones )
+
+ 	function Inner( n,k ) {
+    var operationCount = count++ === 0 ? k : getLargestArrayCount( out ),
+        moveCandidateCount = out.length - operationCount,
+        numberOfMoves = operationCount >= moveCandidateCount ? moveCandidateCount : operationCount
+
+    if( numberOfMoves > 1 || count === 1 ) {
+      for( var i = 0; i < numberOfMoves; i++ ) {
+        var willBeMoved = out.pop(), isArray = Array.isArray( willBeMoved )
+        out[ i ].push( willBeMoved )
+        if( isArray ) { 
+          flatten.call( out[ i ] )
+        }
+      }
+    }
+
+    if( n % k !== 0 ) {
+      return Inner( k, n % k )
+    }else {
+      return flatten.call( out )
+    }
+  }
+
+  return calculateRhythms( Inner( length, ones ), dur )
+}
+// E(5,8) = [ .25, .125, .25, .125, .25 ]
+var calculateRhythms = function( values,dur ) {
+  var out = []
+  
+  console.log( values, dur )
+  if( typeof dur === 'undefined' ) dur = 1 / values.length
+
+  var idx = 0,
+      currentDur = 0
+  
+  while( idx < values.length ) {
+    idx++
+    currentDur += dur
+    
+    if( values[ idx ] == 1 || idx === values.length ) {
+      out.push( currentDur )
+      currentDur = 0
+    } 
+  }
+  
+  return out
+}
+
+var answers = {
+  '1,4' : '1000',
+  '2,3' : '101',
+  '2,5' : '10100',
+  '3,4' : '1011',
+  '3,5' : '10101',
+  '3,7' : '1010100',
+  '3,8' : '10010010',
+  '4,7' : '1010101',
+  '4,9' : '101010100',
+  '4,11': '10010010010',
+  '5,6' : '101111',
+  '5,7' : '1011011',
+  '5,8' : '10110110',
+  '5,9' : '101010101',
+  '5,11': '10101010100',
+  '5,12': '100101001010',
+  '5,16': '1001001001001000',
+  '7,8' : '10111111',
+  '11,24': '100101010101001010101010'
+}
+
+Euclid.test = function( testKey ) {
+  var failed = 0, passed = 0
+
+  if( typeof testKey !== 'string' ) {
+    for( var key in answers ) {
+      var expectedResult = answers[ key ],
+          result = flatten.call( Euclid.apply( null, key.split(',') ) ).join('')
+
+      console.log( result, expectedResult )
+
+      if( result === expectedResult ) {
+        console.log("TEST PASSED", key )
+        passed++
+      }else{
+        console.log("TEST FAILED", key )
+        failed++
+      }
+    }
+    console.log("*****************************TEST RESULTS - Passed: " + passed + ", Failed: " + failed )
+  }else{
+    var expectedResult = answers[testKey],
+				result = flatten.call( Euclid.apply( null, testKey.split(',') ) ).join('')
+
+    console.log( result, expectedResult )
+
+    if( result == expectedResult ) {
+      console.log("TEST PASSED FOR", testKey)
+    }else{
+      console.log("TEST FAILED FOR", testKey)
+    }
+  }
+}
+
+return Euclid
+
+}
+},{}],26:[function(require,module,exports){
 (function() {
 //"use strict" 
 // can't use strict because eval is used to evaluate user code in the run method
@@ -12016,6 +12907,8 @@ var Gibber = {
   export: function( target ) {
     Gibber.Utilities.export( target )
     target.Pattern = Gibber.Pattern 
+    target.Score = Gibber.Score
+    target.Euclid = Gibber.Euclid
     
     if( Gibber.Audio ) {
       Gibber.Audio.export( target )
@@ -12090,7 +12983,7 @@ var Gibber = {
   // },
   Modules : {},
  	import : function( path, exportTo, shouldSave ) {
-    var _done = null;
+    var _done = null
     console.log( 'Loading module ' + path + '...' )
 
     if( path.indexOf( 'http:' ) === -1 ) { 
@@ -12099,8 +12992,8 @@ var Gibber = {
         Gibber.Environment.SERVER_URL + '/gibber/'+path, {},
         function( d ) {
           d = JSON.parse( d )
-                    
-          var f = new Function( "return " + d.text )
+                              
+          var f = new Function( 'return ' + d.text )
           
           Gibber.Modules[ path ] = f()
           
@@ -12111,6 +13004,9 @@ var Gibber = {
           if( Gibber.Modules[ path ] ) {
             if( typeof Gibber.Modules[ path ].init === 'function' ) {
               Gibber.Modules[ path ].init()
+            }
+            if( typeof Gibber.Modules[ path ] === 'object' ) {
+              Gibber.Modules[ path ].moduleText = d.text
             }
             console.log( 'Module ' + path + ' is now loaded.' )
           }else{
@@ -12219,7 +13115,7 @@ var Gibber = {
       
         $.extend( obj, preset )
         
-        if( obj.presetInit ) obj.presetInit() 
+        //if( obj.presetInit ) obj.presetInit() 
       }else if( $.isPlainObject( firstArg ) && typeof firstArg.type === 'undefined' ) {
         $.extend( obj, firstArg )
       }else{
@@ -12365,7 +13261,7 @@ var Gibber = {
       dimensions:1
     })
     
-    Object.defineProperties( from.object[    from.Name ], {
+    Object.defineProperties( from.object[ from.Name ], {
       'min' : {
         configurable:true,
         get : function() { return _min },
@@ -12403,11 +13299,11 @@ var Gibber = {
     }
     
     fnc.seq = function( _v,_d ) {  
-      var v = $.isArray(_v) ? _v : [_v]
-      var d = $.isArray(_d) ? _d : typeof _d !== 'undefined' ? [_d] : null
-      var args = {
+      var v = $.isArray(_v) ? _v : [_v],
+          d = $.isArray(_d) ? _d : typeof _d !== 'undefined' ? [_d] : null,
+          args = {
             'key': key,
-            values: [ Gibber.construct( Gibber.Pattern, v ) ],//$.isArray(v) || v !== null && typeof v !== 'function' && typeof v.length === 'number' ? v : [v],
+            values: [ Gibber.construct( Gibber.Pattern, v ) ],
             durations: d !== null ? [ Gibber.construct( Gibber.Pattern, d ) ] : null,
             target: obj,
             'priority': priority
@@ -12428,7 +13324,7 @@ var Gibber = {
           valuesPattern.repeat( v.randomArgs[ i ], v.randomArgs[ i + 1 ] )
         }
       }
-      
+
       if( d !== null ) {
         var durationsPattern = args.durations[0]
         if( d.randomFlag ) {
@@ -12440,7 +13336,12 @@ var Gibber = {
             durationsPattern.repeat( d.randomArgs[ i ], d.randomArgs[ i + 1 ] )
           }
         }
+        
+        durationsPattern.seq = obj.seq
       }
+      
+      valuesPattern.seq = obj.seq
+      
       obj.seq.add( args )
             
       seqNumber = d !== null ? obj.seq.seqs.length - 1 : obj.seq.autofire.length - 1
@@ -12487,7 +13388,6 @@ var Gibber = {
           }
         },
       })
-      
       // console.log( "D", d )
       // console.log( "DURATIONS", obj.seq.seqs[seqNumber].durations[0] )
       // if( d !== null ) {
@@ -12526,6 +13426,26 @@ var Gibber = {
       if( !obj.seq.isRunning ) { 
         obj.seq.start( false, priority )
       }
+    }
+    
+    fnc.seq.repeat = function( numberOfTimes ) {
+      var repeatCount = 0
+      
+      var filter = function( args, ptrn ) {
+        if( args[2] % (ptrn.getLength() - 1) === 0 && args[2] !== 0) {
+          repeatCount++
+          if( repeatCount === numberOfTimes ) {
+            ptrn.seq.stop()
+          }
+        }
+        return args
+      }
+      
+      fnc.values.filters.push( filter )
+    }
+    
+    fnc.score = function( __v__, __d__ ) {
+      return fnc.seq.bind( null, __v__, __d__ )
     }
   },
   
@@ -12669,7 +13589,7 @@ var Gibber = {
       })
     }
   },
-  
+                                 //obj, propertyName, shouldSeq, shouldRamp, mappingsDictionary, shouldUseMappings, priority, useOldGetter
   createProxyProperty: function( obj, _key, shouldSeq, shouldRamp, dict, _useMappings, priority ) {
     _useMappings = _useMappings === false ? false : true
     
@@ -12699,11 +13619,14 @@ Gibber.Utilities = require( './utilities' )( Gibber )
 // Gibber.Graphics  = require( 'gibber.graphics.lib/scripts/gibber/graphics/graphics' )( Gibber )
 // Gibber.Interface = require( 'gibber.interface.lib/scripts/gibber/interface/interface' )( Gibber )
 Gibber.mappings  = require( './mappings' )( Gibber )
+Gibber.Euclid = require( './euclidean' )( Gibber )
+// TODO: Make Score work without requiring audio
+// Gibber.Score     = require( './score' )//( Gibber ) // only initialize once Gibber.Audio.Core is loaded, otherwise problems
 
 module.exports = Gibber
 
 })()
-},{"./dollar":22,"./mappings":24,"./pattern":25,"./utilities":26}],24:[function(require,module,exports){
+},{"./dollar":24,"./euclidean":25,"./mappings":27,"./pattern":28,"./utilities":29}],27:[function(require,module,exports){
 module.exports = function( Gibber ) {  
   var mappings = {
     audio : {
@@ -13348,13 +14271,13 @@ module.exports.outputCurves= {
   LINEAR:0,
   LOGARITHMIC:1
 }
-},{}],25:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 !function() {
 
 "use strict"
 
 var PatternProto = {
-  concat : function( _pattern ) { this.values = this.values.concat( _pattern.values ) },    
+  concat : function( _pattern ) { this.values = this.values.concat( _pattern.values ) },  
   toString: function() { return this.values.toString() },
   valueOf: function() { return this.values },
   getLength: function() {
@@ -13370,7 +14293,7 @@ var PatternProto = {
     var args = [ val, 1, idx ] // 1 is phaseModifier
 
     for( var i = 0; i < this.filters.length; i++ ) {
-      args = this.filters[ i ]( args )
+      args = this.filters[ i ]( args, this )
     }
 
     return args
@@ -13418,7 +14341,6 @@ var Pattern = function() {
     storage : [],
     stepSize : 1,
     integersOnly : false,
-    repeats : [],
     filters : [],
     onchange : null,
 
@@ -13443,9 +14365,9 @@ var Pattern = function() {
           temporary;
           
       for (left = 0, right = length - 1; left < right; left += 1, right -= 1) {
-          temporary = array[left];
-          array[left] = array[right];
-          array[right] = temporary;
+        temporary = array[left];
+        array[left] = array[right];
+        array[right] = temporary;
       }
       
       fnc._onchange() 
@@ -13463,20 +14385,23 @@ var Pattern = function() {
         }
       }
       
-      var repeating = false, repeatValue = null
+      var repeating = false, repeatValue = null, repeatIndex = null
       var filter = function( args ) {
-        var value = args[ 0 ], phaseModifier = args[ 1 ], output = args//output = [ value, phaseModifier ]
+        var value = args[ 0 ], phaseModifier = args[ 1 ], output = args
         
         //console.log( args, counts )
         if( repeating === false && counts[ value ] ) {
           repeating = true
           repeatValue = value
+          repeatIndex = args[2]
         }
         
         if( repeating === true ) {
           if( counts[ repeatValue ].phase !== counts[ repeatValue ].target ) {
             output[ 0 ] = repeatValue            
             output[ 1 ] = 0
+            output[ 2 ] = repeatIndex
+            //[ val, 1, idx ]
             counts[ repeatValue ].phase++
           }else{
             counts[ repeatValue ].phase = 0
@@ -13615,7 +14540,7 @@ Pattern.prototype = PatternProto
 module.exports = Pattern
 
 }()
-},{}],26:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 module.exports = function( Gibber ) {
 
 "use strict"
@@ -14020,7 +14945,7 @@ var soloGroup = [],
         // Array.prototype.choose = Utilities.choose
         // // Array.prototype.Rnd = Utilities.random2
         // Array.prototype.merge = Utilities.merge
-      }  
+      }
     }
   
   return Utilities
