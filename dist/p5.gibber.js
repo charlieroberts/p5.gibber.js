@@ -2,9 +2,10 @@
 p5.prototype.Gibber = require( 'gibber.core.lib' )
 p5.prototype.Gibber.Audio = require( 'gibber.audio.lib' )( p5.prototype.Gibber )
 
-p5.prototype.Gibber.export( p5.prototype )
-
 p5.prototype.Gibber.init({ globalize:false, target:p5.prototype })
+
+p5.prototype.Gibber.export( p5.prototype )
+p5.prototype.Gibber.Master = p5.prototype.Gibber.Audio.Master
 },{"gibber.audio.lib":5,"gibber.core.lib":26}],2:[function(require,module,exports){
 (function (global){
 !function (root, factory) {
@@ -7858,7 +7859,9 @@ Audio = {
     Audio.Core.Time.export( target )
     Audio.Clock.export( target )
     //target.sec = target.seconds
-    Audio.Core.Binops.export( target )    
+    Audio.Core.Binops.export( target )
+    
+    target.Master = Audio.Master    
   },
   init: function() {
     // post-processing depends on having context instantiated
@@ -12946,11 +12949,12 @@ var Gibber = {
       
       if( typeof _options === 'object' ) $.extend( options, _options )
       
+      Gibber.Pattern = Gibber.Pattern( Gibber )
       if( Gibber.Audio ) {
         Gibber.Audio.init() 
       
         if( options.globalize ) {
-          options.target.Master = Gibber.Audio.Master    
+          //options.target.Master = Gibber.Audio.Master    
         }else{
           var _export = Gibber.export.bind( Gibber )
           $.extend( Gibber, Gibber.Audio )
@@ -14274,9 +14278,11 @@ module.exports.outputCurves= {
   LOGARITHMIC:1
 }
 },{}],28:[function(require,module,exports){
-!function() {
+module.exports = function( Gibber ) {
 
 "use strict"
+
+var $ = require( './dollar' )
 
 var PatternProto = {
   concat : function( _pattern ) { this.values = this.values.concat( _pattern.values ) },  
@@ -14539,10 +14545,10 @@ var Pattern = function() {
 
 Pattern.prototype = PatternProto
 
-module.exports = Pattern
+return Pattern
 
-}()
-},{}],29:[function(require,module,exports){
+}
+},{"./dollar":24}],29:[function(require,module,exports){
 module.exports = function( Gibber ) {
 
 "use strict"
