@@ -2364,6 +2364,109 @@ Gibberish.Line = function(start, end, time, loops) {
 };
 Gibberish.Line.prototype = Gibberish._envelope;
 
+Gibberish.Ease = function( start, end, time, easein, loops ) {
+  var sqrt = Math.sqrt, out = 0, phase = 0
+      
+  start = start || 0
+  end = end || 1
+  time = time || Gibberish.context.sampleRate
+  loops = loops || false
+  easein = typeof easein === 'undefined' ? 1 : easein
+  
+	var that = { 
+		name:		'ease',
+    properties : {},
+    retrigger: function( end, time ) {
+      phase = 0;
+      this.start = out
+      this.end = end
+      this.time = time      
+    },
+    
+    getPhase: function() { return phase },
+    getOut: function() { return out }
+	};
+  
+	this.callback = function() {
+    var x = phase++ / time,
+        y = easein ? 1 - sqrt( 1 - x * x ) : sqrt( 1 - ((1-x) * (1-x)) )
+    
+    out = phase < time ? start + ( y * ( end - start ) ) : end
+    
+		//out = phase < time ? start + ( phase++ * incr) : end;
+				
+		phase = (out >= end && loops) ? 0 : phase;
+		
+		return out;
+	};
+  
+  this.setPhase = function(v) { phase = v; }
+  
+  Gibberish.extend(this, that);
+  
+  this.init();
+
+  return this;
+};
+Gibberish.Ease.prototype = Gibberish._envelope;
+
+// quadratic bezier
+// adapted from http://www.flong.com/texts/code/shapers_bez/
+Gibberish.Curve = function( start, end, time, a, b, loops ) {
+  var sqrt = Math.sqrt, 
+      out = 0,
+      phase = 0
+      
+  start = start || 0
+  end = end || 1
+  time = time || Gibberish.context.sampleRate
+  a = a || .940
+  b = b || .260
+  loops = loops || false
+  
+	var that = { 
+		name:		'curve',
+
+    properties : {},
+    
+    retrigger: function( end, time ) {
+      phase = 0;
+      this.start = out
+      this.end = end
+      this.time = time
+      
+      incr = (end - out) / time
+    },
+    
+    getPhase: function() { return phase },
+    getOut: function() { return out }
+	};
+  
+	this.callback = function() {
+    var x = phase++ / time,
+        om2a = 1 - 2 * a,
+        t = ( sqrt( a*a + om2a*x ) - a ) / om2a,
+        y = (1-2*b) * (t*t) + (2*b) * t
+    
+    out = phase < time ? start + ( y * ( end - start ) ) : end
+    
+		//out = phase < time ? start + ( phase++ * incr) : end;
+				
+		phase = (out >= end && loops) ? 0 : phase;
+		
+		return out;
+	};
+  
+  this.setPhase = function(v) { phase = v; }
+  
+  Gibberish.extend(this, that);
+  
+  this.init();
+
+  return this;
+};
+Gibberish.Curve.prototype = Gibberish._envelope;
+
 Gibberish.AD = function(_attack, _decay) {
   var phase = 0,
       state = 0;
@@ -11146,8 +11249,10 @@ var Score = function( data, opts ) {
   })
 }
 
-Score.wait = -987654321
-Score.combine = function() {
+Score.prototype = proto
+
+Score.prototype.wait = -987654321
+Score.prototype.combine = function() {
   var score = [ 0, arguments[ 0 ] ]
   
   for( var i = 1; i < arguments.length; i++ ) {
@@ -11161,8 +11266,6 @@ Score.combine = function() {
   
   return Score( score )
 }
-
-Score.prototype = proto
 
 return Score
 
@@ -13159,7 +13262,8 @@ var Gibber = {
     
     if( Gibber.Graphics ) Gibber.Graphics.clear( Gibber.Graphics, args )
 
-    Gibber.proxy( window, [ a ] )
+    //Gibber.proxy( window, [ a ] )
+    Gibber.proxy( window )
 		
     $.publish( '/gibber/clear', {} )
         
@@ -13171,7 +13275,7 @@ var Gibber = {
     
 		for(var l = 0; l < letters.length; l++) {
 			var lt = letters.charAt(l);
-      if( typeof window[ lt ] !== 'undefined' && arguments[1].indexOf( window[ lt ] ) === -1 ) { 
+      if( typeof window[ lt ] !== 'undefined' ) { //&& arguments[1].indexOf( window[ lt ] ) === -1 ) { 
         delete window[ lt ] 
         delete window[ '___' + lt ]
       }
