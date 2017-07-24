@@ -16,7 +16,6 @@ life = {
         }
       }
     }
-    
   },
   
   onbirth: function() {},
