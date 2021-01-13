@@ -6846,9 +6846,7 @@ Create a callback and start it running. Note that in iOS audio callbacks can onl
         audioContext,
         start
     
-    if( typeof webkitAudioContext !== 'undefined' ) {
-      audioContext = webkitAudioContext
-    }else if ( typeof AudioContext !== 'undefined' ) {
+    if ( typeof AudioContext !== 'undefined' ) {
       audioContext = AudioContext
     }
 
